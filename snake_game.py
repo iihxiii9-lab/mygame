@@ -6,10 +6,9 @@ import streamlit.components.v1 as components
 
 # --- CONFIGURATION ---
 SCORE_FILE = "game.txt"
-BOARD_ROWS = 15
-BOARD_COLS = 15
+TRACK_LENGTH = 20
 
-st.set_page_config(page_title="Streamlit Snake Game", layout="centered")
+st.set_page_config(page_title="Snake Jumper", layout="centered")
 
 # Ensure game.txt exists
 if not os.path.exists(SCORE_FILE):
@@ -44,13 +43,11 @@ def save_score(player_name, score):
         f.write(f"{player_name},{score}\n")
 
 
-# Initialize session state variables
-if "snake" not in st.session_state:
-    st.session_state.snake = [(7, 7), (7, 6), (7, 5)]
-if "direction" not in st.session_state:
-    st.session_state.direction = "RIGHT"
-if "food" not in st.session_state:
-    st.session_state.food = (3, 3)
+# Initialize session state
+if "snake_y" not in st.session_state:
+    st.session_state.snake_y = 0  # 0 = Ground, 1 = Jumping
+if "obstacles" not in st.session_state:
+    st.session_state.obstacles = [15]  # Positions of obstacles on the track
 if "score" not in st.session_state:
     st.session_state.score = 0
 if "game_over" not in st.session_state:
@@ -60,67 +57,48 @@ if "game_started" not in st.session_state:
 
 
 def reset_game():
-    st.session_state.snake = [(7, 7), (7, 6), (7, 5)]
-    st.session_state.direction = "RIGHT"
-    st.session_state.food = spawn_food([(7, 7), (7, 6), (7, 5)])
+    st.session_state.snake_y = 0
+    st.session_state.obstacles = [15]
     st.session_state.score = 0
     st.session_state.game_over = False
     st.session_state.game_started = True
 
 
-def spawn_food(snake):
-    while True:
-        food = (
-            random.randint(0, BOARD_ROWS - 1),
-            random.randint(0, BOARD_COLS - 1),
-        )
-        if food not in snake:
-            return food
-
-
-def step():
+def step(should_jump=False):
     if st.session_state.game_over or not st.session_state.game_started:
         return
 
-    head_r, head_c = st.session_state.snake[0]
+    # Process Jump Logic
+    if should_jump or st.session_state.snake_y > 0:
+        if st.session_state.snake_y == 0 and should_jump:
+            st.session_state.snake_y = 1
+        else:
+            st.session_state.snake_y = 0  # Land back down
 
-    if st.session_state.direction == "UP":
-        new_head = (head_r - 1, head_c)
-    elif st.session_state.direction == "DOWN":
-        new_head = (head_r + 1, head_c)
-    elif st.session_state.direction == "LEFT":
-        new_head = (head_r, head_c - 1)
-    elif st.session_state.direction == "RIGHT":
-        new_head = (head_r, head_c + 1)
+    # Move obstacles left
+    new_obstacles = []
+    for obs in st.session_state.obstacles:
+        next_pos = obs - 1
+        if next_pos == 2 and st.session_state.snake_y == 0:
+            # Collision detected at snake position (index 2) while grounded
+            st.session_state.game_over = True
+            save_score(st.session_state.player_name, st.session_state.score)
+            return
+        elif next_pos >= 0:
+            new_obstacles.append(next_pos)
+        else:
+            # Successfully passed obstacle
+            st.session_state.score += 10
 
-    # Collision with walls or self
-    if not (
-        0 <= new_head[0] < BOARD_ROWS and 0 <= new_head[1] < BOARD_COLS
-    ) or new_head in st.session_state.snake:
-        st.session_state.game_over = True
-        save_score(st.session_state.player_name, st.session_state.score)
-        return
+    # Spawn new obstacles randomly
+    if not new_obstacles or (TRACK_LENGTH - 1 - new_obstacles[-1] >= 6 and random.random() < 0.4):
+        new_obstacles.append(TRACK_LENGTH - 1)
 
-    # Move snake
-    st.session_state.snake.insert(0, new_head)
-
-    # Food collision
-    if new_head == st.session_state.food:
-        st.session_state.score += 10
-        st.session_state.food = spawn_food(st.session_state.snake)
-    else:
-        st.session_state.snake.pop()
-
-
-def change_dir(new_dir):
-    opposites = {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"}
-    if new_dir != opposites.get(st.session_state.direction):
-        st.session_state.direction = new_dir
-        step()
+    st.session_state.obstacles = new_obstacles
 
 
 # --- UI LAYOUT ---
-st.title("🐍 Multi-User Snake Game")
+st.title("🐍 Snake Jumper")
 
 player_name = st.text_input(
     "Enter Player Name:",
@@ -141,43 +119,33 @@ with col_btn1:
 with col_btn2:
     st.metric("Score", st.session_state.score)
 
-# Display Game Grid
-grid = [["⬜" for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+# Render Track
+air_row = ["⬜"] * TRACK_LENGTH
+ground_row = ["⬜"] * TRACK_LENGTH
 
+# Render Obstacles
+for obs in st.session_state.obstacles:
+    if 0 <= obs < TRACK_LENGTH:
+        ground_row[obs] = "🌵"
+
+# Render Snake (fixed at horizontal index 2)
 if st.session_state.game_started:
-    for r, c in st.session_state.snake:
-        grid[r][c] = "🟩"
-    fr, fc = st.session_state.food
-    grid[fr][fc] = "🍎"
+    if st.session_state.snake_y == 1:
+        air_row[2] = "🐍"
+    else:
+        ground_row[2] = "🐍"
 
-board_str = "\n".join(["".join(row) for row in grid])
-st.text(board_str)
+track_display = "".join(air_row) + "\n" + "".join(ground_row)
+st.text(track_display)
 
-# Screen D-Pad Controls
-st.markdown("**Controls (Use Keyboard Arrows / WASD or On-Screen Buttons):**")
-c1, c2, c3 = st.columns([1, 1, 1])
-with c2:
-    if st.button("⬆️ Up", key="btn_up"):
-        change_dir("UP")
-        st.rerun()
+# Jump Controls
+st.markdown("**Controls:** Press **Spacebar** or **Enter** (or click below) to Jump!")
 
-c4, c5, c6 = st.columns([1, 1, 1])
-with c4:
-    if st.button("⬅️ Left", key="btn_left"):
-        change_dir("LEFT")
-        st.rerun()
-with c6:
-    if st.button("➡️ Right", key="btn_right"):
-        change_dir("RIGHT")
-        st.rerun()
+if st.button("🦘 JUMP", key="btn_jump"):
+    step(should_jump=True)
+    st.rerun()
 
-c7, c8, c9 = st.columns([1, 1, 1])
-with c8:
-    if st.button("⬇️ Down", key="btn_down"):
-        change_dir("DOWN")
-        st.rerun()
-
-# Keyboard Event Listener (Prevents page scrolling & triggers movements)
+# Global Event Listener for Spacebar & Enter Key
 if st.session_state.game_started and not st.session_state.game_over:
     components.html(
         """
@@ -185,29 +153,15 @@ if st.session_state.game_started and not st.session_state.game_over:
         const doc = window.parent.document;
         const win = window.parent;
 
-        if (!win.snakeKeyHandlerAttached) {
-            win.snakeKeyHandlerAttached = true;
+        if (!win.snakeJumpHandlerAttached) {
+            win.snakeJumpHandlerAttached = true;
             win.addEventListener('keydown', function(e) {
-                // Intercept arrow keys & prevent browser scrolling
-                if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+                if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
-                }
-
-                let btn = null;
-                const buttons = Array.from(doc.querySelectorAll('button'));
-
-                if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-                    btn = buttons.find(b => b.innerText.includes('Up'));
-                } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-                    btn = buttons.find(b => b.innerText.includes('Down'));
-                } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-                    btn = buttons.find(b => b.innerText.includes('Left'));
-                } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-                    btn = buttons.find(b => b.innerText.includes('Right'));
-                }
-
-                if (btn) {
-                    btn.click();
+                    const btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('JUMP'));
+                    if (btn) {
+                        btn.click();
+                    }
                 }
             }, { passive: false });
         }
@@ -218,7 +172,7 @@ if st.session_state.game_started and not st.session_state.game_over:
     )
 
 if st.session_state.game_over:
-    st.error(f"Game Over! Final Score: {st.session_state.score}")
+    st.error(f"Game Over! You crashed into an obstacle. Final Score: {st.session_state.score}")
 
 # Leaderboard
 st.markdown("---")
