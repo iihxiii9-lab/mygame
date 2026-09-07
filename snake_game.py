@@ -177,29 +177,40 @@ with c8:
         change_dir("DOWN")
         st.rerun()
 
-# Keyboard Event Listener (Inject JS to bind Arrow keys and WASD to screen buttons)
+# Keyboard Event Listener (Prevents page scrolling & triggers movements)
 if st.session_state.game_started and not st.session_state.game_over:
     components.html(
         """
         <script>
         const doc = window.parent.document;
-        doc.addEventListener('keydown', function(e) {
-            let btn = null;
-            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-                btn = doc.querySelector('button[kind="secondary"]:has(span:contains("Up"))') || 
-                      Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Up'));
-            } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-                btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Down'));
-            } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-                btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Left'));
-            } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-                btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Right'));
-            }
-            if (btn) {
-                e.preventDefault();
-                btn.click();
-            }
-        });
+        const win = window.parent;
+
+        if (!win.snakeKeyHandlerAttached) {
+            win.snakeKeyHandlerAttached = true;
+            win.addEventListener('keydown', function(e) {
+                // Intercept arrow keys & prevent browser scrolling
+                if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+                    e.preventDefault();
+                }
+
+                let btn = null;
+                const buttons = Array.from(doc.querySelectorAll('button'));
+
+                if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                    btn = buttons.find(b => b.innerText.includes('Up'));
+                } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+                    btn = buttons.find(b => b.innerText.includes('Down'));
+                } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                    btn = buttons.find(b => b.innerText.includes('Left'));
+                } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                    btn = buttons.find(b => b.innerText.includes('Right'));
+                }
+
+                if (btn) {
+                    btn.click();
+                }
+            }, { passive: false });
+        }
         </script>
         """,
         height=0,
