@@ -1,166 +1,165 @@
 import time
 import pandas as pd
-import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
 # --- CONFIGURATION ---
-# Replace this with your actual Firebase Realtime Database URL
-FIREBASE_URL = "https://YOUR-FIREBASE-PROJECT.firebaseio.com/"
+SCORE_FILE = "game.txt"
 TRACK_LENGTH = 20
 
-st.set_page_config(page_title="2-Player Snake Jumper", layout="centered")
+st.set_page_config(page_title="Snake Jumper - Single & Multiplayer", layout="centered")
 
 
-# --- FIREBASE HELPERS ---
-def get_room_data(room_code):
+# --- LOCAL SCORE MANAGEMENT ---
+def load_scores():
     try:
-        r = requests.get(f"{FIREBASE_URL}rooms/{room_code}.json")
-        return r.json() or {}
+        if not st.session_state.get("local_scores"):
+            st.session_state.local_scores = [
+                {"Name": "ProBot", "Score": 120},
+                {"Name": "Player 1", "Score": 80},
+            ]
+        df = pd.DataFrame(st.session_state.local_scores)
+        return df.sort_values(by="Score", ascending=False).reset_index(drop=True)
     except Exception:
-        return {}
+        return pd.DataFrame(columns=["Name", "Score"])
 
 
-def update_room_data(room_code, data):
-    try:
-        requests.patch(f"{FIREBASE_URL}rooms/{room_code}.json", json=data)
-    except Exception:
-        pass
+def save_score(name, score):
+    if "local_scores" not in st.session_state:
+        st.session_state.local_scores = []
+    st.session_state.local_scores.append({"Name": name, "Score": score})
 
 
-def save_high_score(name, score):
-    try:
-        requests.post(
-            f"{FIREBASE_URL}leaderboard.json",
-            json={"Name": name, "Score": score},
-        )
-    except Exception:
-        pass
+# --- SESSION STATE INITIALIZATION ---
+if "game_started" not in st.session_state:
+    st.session_state.game_started = False
+if "game_over" not in st.session_state:
+    st.session_state.game_over = False
+if "p1_y" not in st.session_state:
+    st.session_state.p1_y = 0
+if "p2_y" not in st.session_state:
+    st.session_state.p2_y = 0
+if "obstacles" not in st.session_state:
+    st.session_state.obstacles = [15]
+if "p1_score" not in st.session_state:
+    st.session_state.p1_score = 0
+if "p2_score" not in st.session_state:
+    st.session_state.p2_score = 0
 
 
-def get_leaderboard():
-    try:
-        r = requests.get(f"{FIREBASE_URL}leaderboard.json")
-        data = r.json() or {}
-        scores = list(data.values())
-        df = pd.DataFrame(scores)
-        if not df.empty:
-            return df.sort_values(by="Score", ascending=False).reset_index(
-                drop=True
-            )
-    except Exception:
-        pass
-    return pd.DataFrame(columns=["Name", "Score"])
+def reset_game(player_name, opponent_type):
+    st.session_state.p1_name = player_name
+    st.session_state.p2_name = "Computer Bot" if opponent_type == "Computer" else "Player 2"
+    st.session_state.opponent_type = opponent_type
+    st.session_state.p1_y = 0
+    st.session_state.p2_y = 0
+    st.session_state.obstacles = [15]
+    st.session_state.p1_score = 0
+    st.session_state.p2_score = 0
+    st.session_state.game_over = False
+    st.session_state.game_started = True
+
+
+def step():
+    if not st.session_state.game_started or st.session_state.game_over:
+        return
+
+    # 1. Player 1 Jump Logic (resets to ground after 1 frame)
+    if st.session_state.p1_y == 1:
+        st.session_state.p1_y = 0
+
+    # 2. Computer AI Logic (Auto-jumps when obstacle is near position 2)
+    if st.session_state.opponent_type == "Computer":
+        incoming_obstacle = any(obs in [3, 4] for obs in st.session_state.obstacles)
+        st.session_state.p2_y = 1 if incoming_obstacle else 0
+    elif st.session_state.p2_y == 1:
+        st.session_state.p2_y = 0
+
+    # 3. Move Obstacles
+    new_obstacles = []
+    for obs in st.session_state.obstacles:
+        next_pos = obs - 1
+
+        # Check Collision at Index 2
+        p1_hit = (next_pos == 2 and st.session_state.p1_y == 0)
+        p2_hit = (next_pos == 2 and st.session_state.p2_y == 0)
+
+        if p1_hit or p2_hit:
+            st.session_state.game_over = True
+            save_score(st.session_state.p1_name, st.session_state.p1_score)
+            save_score(st.session_state.p2_name, st.session_state.p2_score)
+            return
+        elif next_pos >= 0:
+            new_obstacles.append(next_pos)
+        else:
+            st.session_state.p1_score += 10
+            st.session_state.p2_score += 10
+
+    # Spawn new obstacle
+    if not new_obstacles or (TRACK_LENGTH - 1 - new_obstacles[-1] >= 6):
+        new_obstacles.append(TRACK_LENGTH - 1)
+
+    st.session_state.obstacles = new_obstacles
 
 
 # --- UI LAYOUT ---
-st.title("🐍 2-Player Online Snake Jumper")
+st.title("🐍 Snake Jumper (vs Computer / 2 Player)")
 
-# Room & Player Setup
-st.sidebar.header("Lobby Setup")
-room_id = st.sidebar.text_input("Room Code", value="ROOM1").upper().strip()
+# Sidebar Setup
+st.sidebar.header("Game Options")
 player_name = st.sidebar.text_input("Your Name", value="Player 1").strip()
-player_slot = st.sidebar.radio("Select Slot", ["p1", "p2"])
+mode = st.sidebar.radio("Opponent Mode", ["vs Computer (Instant Play)", "2 Player Local"])
 
-room = get_room_data(room_id)
+if st.sidebar.button("Start / Reset Game"):
+    if not player_name:
+        st.sidebar.warning("Please enter your name!")
+    else:
+        opp_type = "Computer" if "Computer" in mode else "Player 2"
+        reset_game(player_name, opp_type)
+        st.rerun()
 
-if st.sidebar.button("Join / Reset Room"):
-    initial_state = {
-        "p1_name": player_name if player_slot == "p1" else room.get("p1_name", "Player 1"),
-        "p2_name": player_name if player_slot == "p2" else room.get("p2_name", "Player 2"),
-        "p1_y": 0,
-        "p2_y": 0,
-        "obstacles": [15],
-        "p1_score": 0,
-        "p2_score": 0,
-        "game_over": False,
-        "game_started": True,
-    }
-    update_room_data(room_id, initial_state)
-    st.rerun()
+# Engine Rendering
+if st.session_state.game_started and not st.session_state.game_over:
+    p1_name = st.session_state.p1_name
+    p2_name = st.session_state.p2_name
 
-# --- GAME ENGINE ---
-if room.get("game_started") and not room.get("game_over"):
-    st.caption(f"Connected to **Room: {room_id}** | Playing as **{player_slot.upper()}**")
-
-    p1_name = room.get("p1_name", "Player 1")
-    p2_name = room.get("p2_name", "Player 2")
-    p1_y = room.get("p1_y", 0)
-    p2_y = room.get("p2_y", 0)
-    obstacles = room.get("obstacles", [15])
-
-    # Display Scores
     c1, c2 = st.columns(2)
     with c1:
-        st.metric(f"🟢 {p1_name}", f"Score: {room.get('p1_score', 0)}")
+        st.metric(f"🟢 {p1_name}", f"Score: {st.session_state.p1_score}")
     with c2:
-        st.metric(f"🔵 {p2_name}", f"Score: {room.get('p2_score', 0)}")
+        st.metric(f"🤖 {p2_name}", f"Score: {st.session_state.p2_score}")
 
-    # Render Tracks
+    # Build Tracks
     p1_air = ["⬜"] * TRACK_LENGTH
     p1_ground = ["⬜"] * TRACK_LENGTH
     p2_air = ["⬜"] * TRACK_LENGTH
     p2_ground = ["⬜"] * TRACK_LENGTH
 
-    for obs in obstacles:
+    for obs in st.session_state.obstacles:
         if 0 <= obs < TRACK_LENGTH:
             p1_ground[obs] = "🌵"
             p2_ground[obs] = "🌵"
 
-    if p1_y == 1:
+    if st.session_state.p1_y == 1:
         p1_air[2] = "🟢"
     else:
         p1_ground[2] = "🟢"
 
-    if p2_y == 1:
-        p2_air[2] = "🔵"
+    if st.session_state.p2_y == 1:
+        p2_air[2] = "🤖"
     else:
-        p2_ground[2] = "🔵"
+        p2_ground[2] = "🤖"
 
-    st.markdown(f"**{p1_name}'s Track (P1):**")
+    st.markdown(f"**{p1_name}'s Track:**")
     st.text("".join(p1_air) + "\n" + "".join(p1_ground))
 
-    st.markdown(f"**{p2_name}'s Track (P2):**")
+    st.markdown(f"**{p2_name}'s Track:**")
     st.text("".join(p2_air) + "\n" + "".join(p2_ground))
 
-    # Jump Action
+    # Controls
     if st.button("🦘 JUMP (Space / Enter)", key="jump_btn"):
-        current_y = room.get(f"{player_slot}_y", 0)
-        new_y = 1 if current_y == 0 else 0
-        update_room_data(room_id, {f"{player_slot}_y": new_y})
-
-        # Obstacle physics and collision checking
-        new_obstacles = []
-        game_over = False
-        p1_score = room.get("p1_score", 0)
-        p2_score = room.get("p2_score", 0)
-
-        for obs in obstacles:
-            next_pos = obs - 1
-            if (next_pos == 2 and p1_y == 0) or (next_pos == 2 and p2_y == 0):
-                game_over = True
-            elif next_pos >= 0:
-                new_obstacles.append(next_pos)
-            else:
-                p1_score += 10
-                p2_score += 10
-
-        if not new_obstacles:
-            new_obstacles.append(TRACK_LENGTH - 1)
-
-        if game_over:
-            save_high_score(p1_name, p1_score)
-            save_high_score(p2_name, p2_score)
-            update_room_data(room_id, {"game_over": True})
-        else:
-            update_room_data(
-                room_id,
-                {
-                    "obstacles": new_obstacles,
-                    "p1_score": p1_score,
-                    "p2_score": p2_score,
-                },
-            )
+        st.session_state.p1_y = 1
+        step()
         st.rerun()
 
     # Keyboard Listener for Space / Enter
@@ -169,8 +168,8 @@ if room.get("game_started") and not room.get("game_over"):
         <script>
         const doc = window.parent.document;
         const win = window.parent;
-        if (!win.multiplayerKeyHandler) {
-            win.multiplayerKeyHandler = true;
+        if (!win.snakeJumpBotHandler) {
+            win.snakeJumpBotHandler = true;
             win.addEventListener('keydown', function(e) {
                 if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
@@ -185,14 +184,14 @@ if room.get("game_started") and not room.get("game_over"):
         width=0,
     )
 
-elif room.get("game_over"):
-    st.error("💥 Crash! Game Over for both players.")
-    st.info("Click 'Join / Reset Room' in the sidebar to play again.")
+elif st.session_state.game_over:
+    st.error(f"💥 Game Over! Final Scores — {st.session_state.p1_name}: {st.session_state.p1_score} | {st.session_state.p2_name}: {st.session_state.p2_score}")
+    st.info("Click 'Start / Reset Game' in the sidebar to try again.")
 
 else:
-    st.info("Enter a Room Code and click 'Join / Reset Room' in the sidebar to start!")
+    st.info("Enter your name in the sidebar and click 'Start / Reset Game' to jump in!")
 
-# Global Leaderboard
+# Leaderboard
 st.markdown("---")
-st.subheader("🏆 Global Leaderboard")
-st.dataframe(get_leaderboard(), use_container_width=True)
+st.subheader("🏆 Leaderboard")
+st.dataframe(load_scores(), use_container_width=True)
