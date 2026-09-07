@@ -46,20 +46,18 @@ def reset_game():
     st.session_state.game_started = True
 
 
-def step(vs_bot):
+def step(vs_bot, p1_jump, p2_jump):
     if st.session_state.game_over:
         return
 
-    # Reset jumps after 1 frame
-    if st.session_state.p1_y == 1:
-        st.session_state.p1_y = 0
+    # Apply manual jump inputs
+    st.session_state.p1_y = 1 if p1_jump else 0
 
-    # Computer AI Logic
     if vs_bot:
         incoming = any(obs in [3, 4] for obs in st.session_state.obstacles)
         st.session_state.p2_y = 1 if incoming else 0
-    elif st.session_state.p2_y == 1:
-        st.session_state.p2_y = 0
+    else:
+        st.session_state.p2_y = 1 if p2_jump else 0
 
     # Move Obstacles
     new_obstacles = []
@@ -89,7 +87,7 @@ st.title("🐍 Simple Snake Jumper")
 
 if not st.session_state.game_started:
     p1_name = st.text_input("Player 1 Name:", value="Player 1")
-    mode = st.radio("Select Mode:", ["vs Computer Bot", "2 Player (Shared Keyboard)"])
+    mode = st.radio("Select Mode:", ["vs Computer Bot", "2 Player"])
 
     if st.button("🚀 Start Game"):
         st.session_state.p1_name = p1_name
@@ -120,53 +118,28 @@ else:
     p2_ground[2] = p2_icon if st.session_state.p2_y == 0 else "⬜"
     p2_air[2] = p2_icon if st.session_state.p2_y == 1 else "⬜"
 
-    st.markdown(f"**{p1_name} (Press 'W' to jump):**")
+    st.markdown(f"**{p1_name}:**")
     st.text("".join(p1_air) + "\n" + "".join(p1_ground))
 
-    st.markdown(f"**{p2_name} ({'Auto Jump' if vs_bot else 'Press P to jump'}):**")
+    st.markdown(f"**{p2_name}:**")
     st.text("".join(p2_air) + "\n" + "".join(p2_ground))
 
-    # Controls
+    # Turn Controls
     if not st.session_state.game_over:
+        st.markdown("---")
         col1, col2 = st.columns(2)
-        with col1:
-            if st.button(f"🦘 {p1_name} Jump (W)", key="p1_jump_btn"):
-                st.session_state.p1_y = 1
-                step(vs_bot)
-                st.rerun()
 
+        with col1:
+            p1_jump = st.checkbox(f"🦘 {p1_name} Jump Next Turn")
+
+        p2_jump = False
         if not vs_bot:
             with col2:
-                if st.button("🦘 Player 2 Jump (P)", key="p2_jump_btn"):
-                    st.session_state.p2_y = 1
-                    step(vs_bot)
-                    st.rerun()
+                p2_jump = st.checkbox("🦘 Player 2 Jump Next Turn")
 
-        # Keyboard Controls Listener (W and P)
-        st.html(
-            """
-            <script>
-            const doc = window.parent.document;
-            const win = window.parent;
-            if (!win.snakeKeyHandlerAttached) {
-                win.snakeKeyHandlerAttached = true;
-                win.addEventListener('keydown', function(e) {
-                    const key = e.key.toLowerCase();
-                    if (key === 'w') {
-                        e.preventDefault();
-                        const btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Player 1 Jump') || b.innerText.includes('(W)'));
-                        if (btn) btn.click();
-                    } else if (key === 'p') {
-                        e.preventDefault();
-                        const btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Player 2 Jump') || b.innerText.includes('(P)'));
-                        if (btn) btn.click();
-                    }
-                }, { passive: false });
-            }
-            </script>
-            """
-        )
-
+        if st.button("▶️ Next Frame / Advance Track", use_container_width=True):
+            step(vs_bot, p1_jump, p2_jump)
+            st.rerun()
     else:
         st.error(f"💥 Game Over! Final Score: {st.session_state.score}")
         if st.button("🔄 Play Again"):
