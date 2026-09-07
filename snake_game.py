@@ -1,13 +1,12 @@
-import time
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 # --- CONFIGURATION ---
-SCORE_FILE = "game.txt"
 TRACK_LENGTH = 20
 
-st.set_page_config(page_title="Snake Jumper - Single & Multiplayer", layout="centered")
+st.set_page_config(
+    page_title="Snake Jumper - Single & Multiplayer", layout="centered"
+)
 
 
 # --- LOCAL SCORE MANAGEMENT ---
@@ -19,7 +18,9 @@ def load_scores():
                 {"Name": "Player 1", "Score": 80},
             ]
         df = pd.DataFrame(st.session_state.local_scores)
-        return df.sort_values(by="Score", ascending=False).reset_index(drop=True)
+        return df.sort_values(by="Score", ascending=False).reset_index(
+            drop=True
+        )
     except Exception:
         return pd.DataFrame(columns=["Name", "Score"])
 
@@ -49,7 +50,9 @@ if "p2_score" not in st.session_state:
 
 def reset_game(player_name, opponent_type):
     st.session_state.p1_name = player_name
-    st.session_state.p2_name = "Computer Bot" if opponent_type == "Computer" else "Player 2"
+    st.session_state.p2_name = (
+        "Computer Bot" if opponent_type == "Computer" else "Player 2"
+    )
     st.session_state.opponent_type = opponent_type
     st.session_state.p1_y = 0
     st.session_state.p2_y = 0
@@ -64,13 +67,15 @@ def step():
     if not st.session_state.game_started or st.session_state.game_over:
         return
 
-    # 1. Player 1 Jump Logic (resets to ground after 1 frame)
+    # 1. Player 1 Jump Logic
     if st.session_state.p1_y == 1:
         st.session_state.p1_y = 0
 
     # 2. Computer AI Logic (Auto-jumps when obstacle is near position 2)
     if st.session_state.opponent_type == "Computer":
-        incoming_obstacle = any(obs in [3, 4] for obs in st.session_state.obstacles)
+        incoming_obstacle = any(
+            obs in [3, 4] for obs in st.session_state.obstacles
+        )
         st.session_state.p2_y = 1 if incoming_obstacle else 0
     elif st.session_state.p2_y == 1:
         st.session_state.p2_y = 0
@@ -81,8 +86,8 @@ def step():
         next_pos = obs - 1
 
         # Check Collision at Index 2
-        p1_hit = (next_pos == 2 and st.session_state.p1_y == 0)
-        p2_hit = (next_pos == 2 and st.session_state.p2_y == 0)
+        p1_hit = next_pos == 2 and st.session_state.p1_y == 0
+        p2_hit = next_pos == 2 and st.session_state.p2_y == 0
 
         if p1_hit or p2_hit:
             st.session_state.game_over = True
@@ -108,7 +113,9 @@ st.title("🐍 Snake Jumper (vs Computer / 2 Player)")
 # Sidebar Setup
 st.sidebar.header("Game Options")
 player_name = st.sidebar.text_input("Your Name", value="Player 1").strip()
-mode = st.sidebar.radio("Opponent Mode", ["vs Computer (Instant Play)", "2 Player Local"])
+mode = st.sidebar.radio(
+    "Opponent Mode", ["vs Computer (Instant Play)", "2 Player Local"]
+)
 
 if st.sidebar.button("Start / Reset Game"):
     if not player_name:
@@ -162,8 +169,8 @@ if st.session_state.game_started and not st.session_state.game_over:
         step()
         st.rerun()
 
-    # Keyboard Listener for Space / Enter
-    components.html(
+    # Keyboard Listener using st.html
+    st.html(
         """
         <script>
         const doc = window.parent.document;
@@ -179,19 +186,24 @@ if st.session_state.game_started and not st.session_state.game_over:
             }, { passive: false });
         }
         </script>
-        """,
-        height=0,
-        width=0,
+        """
     )
 
 elif st.session_state.game_over:
-    st.error(f"💥 Game Over! Final Scores — {st.session_state.p1_name}: {st.session_state.p1_score} | {st.session_state.p2_name}: {st.session_state.p2_score}")
+    st.error(
+        f"💥 Game Over! Final Scores — {st.session_state.p1_name}:"
+        f" {st.session_state.p1_score} | {st.session_state.p2_name}:"
+        f" {st.session_state.p2_score}"
+    )
     st.info("Click 'Start / Reset Game' in the sidebar to try again.")
 
 else:
-    st.info("Enter your name in the sidebar and click 'Start / Reset Game' to jump in!")
+    st.info(
+        "Enter your name in the sidebar and click 'Start / Reset Game' to jump"
+        " in!"
+    )
 
 # Leaderboard
 st.markdown("---")
 st.subheader("🏆 Leaderboard")
-st.dataframe(load_scores(), use_container_width=True)
+st.dataframe(load_scores(), width="stretch")
