@@ -1,0 +1,4 @@
+Alice,150
+Bob,120
+Charlie,90
+Diana,50
