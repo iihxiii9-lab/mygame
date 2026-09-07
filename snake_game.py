@@ -1,8 +1,8 @@
 import os
 import random
-import time
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 # --- CONFIGURATION ---
 SCORE_FILE = "game.txt"
@@ -93,7 +93,7 @@ def step():
     elif st.session_state.direction == "RIGHT":
         new_head = (head_r, head_c + 1)
 
-    # Collision with walls
+    # Collision with walls or self
     if not (
         0 <= new_head[0] < BOARD_ROWS and 0 <= new_head[1] < BOARD_COLS
     ) or new_head in st.session_state.snake:
@@ -110,6 +110,13 @@ def step():
         st.session_state.food = spawn_food(st.session_state.snake)
     else:
         st.session_state.snake.pop()
+
+
+def change_dir(new_dir):
+    opposites = {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"}
+    if new_dir != opposites.get(st.session_state.direction):
+        st.session_state.direction = new_dir
+        step()
 
 
 # --- UI LAYOUT ---
@@ -146,37 +153,58 @@ if st.session_state.game_started:
 board_str = "\n".join(["".join(row) for row in grid])
 st.text(board_str)
 
-# D-Pad Controls
-st.markdown("**Controls:**")
+# Screen D-Pad Controls
+st.markdown("**Controls (Use Keyboard Arrows / WASD or On-Screen Buttons):**")
 c1, c2, c3 = st.columns([1, 1, 1])
 with c2:
-    if st.button("⬆️ Up"):
-        if st.session_state.direction != "DOWN":
-            st.session_state.direction = "UP"
-            step()
-            st.rerun()
+    if st.button("⬆️ Up", key="btn_up"):
+        change_dir("UP")
+        st.rerun()
 
 c4, c5, c6 = st.columns([1, 1, 1])
 with c4:
-    if st.button("⬅️ Left"):
-        if st.session_state.direction != "RIGHT":
-            st.session_state.direction = "LEFT"
-            step()
-            st.rerun()
+    if st.button("⬅️ Left", key="btn_left"):
+        change_dir("LEFT")
+        st.rerun()
 with c6:
-    if st.button("➡️ Right"):
-        if st.session_state.direction != "LEFT":
-            st.session_state.direction = "RIGHT"
-            step()
-            st.rerun()
+    if st.button("➡️ Right", key="btn_right"):
+        change_dir("RIGHT")
+        st.rerun()
 
 c7, c8, c9 = st.columns([1, 1, 1])
 with c8:
-    if st.button("⬇️ Down"):
-        if st.session_state.direction != "UP":
-            st.session_state.direction = "DOWN"
-            step()
-            st.rerun()
+    if st.button("⬇️ Down", key="btn_down"):
+        change_dir("DOWN")
+        st.rerun()
+
+# Keyboard Event Listener (Inject JS to bind Arrow keys and WASD to screen buttons)
+if st.session_state.game_started and not st.session_state.game_over:
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        doc.addEventListener('keydown', function(e) {
+            let btn = null;
+            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                btn = doc.querySelector('button[kind="secondary"]:has(span:contains("Up"))') || 
+                      Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Up'));
+            } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+                btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Down'));
+            } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Left'));
+            } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Right'));
+            }
+            if (btn) {
+                e.preventDefault();
+                btn.click();
+            }
+        });
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 if st.session_state.game_over:
     st.error(f"Game Over! Final Score: {st.session_state.score}")
