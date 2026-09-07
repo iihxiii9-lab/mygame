@@ -88,7 +88,6 @@ def step(vs_bot):
 st.title("🐍 Simple Snake Jumper")
 
 if not st.session_state.game_started:
-    # Setup Screen
     p1_name = st.text_input("Player 1 Name:", value="Player 1")
     mode = st.radio("Select Mode:", ["vs Computer Bot", "2 Player (Shared Keyboard)"])
 
@@ -99,7 +98,6 @@ if not st.session_state.game_started:
         st.rerun()
 
 else:
-    # Active Game Screen
     vs_bot = st.session_state.vs_bot
     p1_name = st.session_state.p1_name
     p2_name = "Bot" if vs_bot else "Player 2"
@@ -122,27 +120,53 @@ else:
     p2_ground[2] = p2_icon if st.session_state.p2_y == 0 else "⬜"
     p2_air[2] = p2_icon if st.session_state.p2_y == 1 else "⬜"
 
-    st.markdown(f"**{p1_name}:**")
+    st.markdown(f"**{p1_name} (Press 'W' to jump):**")
     st.text("".join(p1_air) + "\n" + "".join(p1_ground))
 
-    st.markdown(f"**{p2_name}:**")
+    st.markdown(f"**{p2_name} ({'Auto Jump' if vs_bot else 'Press P to jump'}):**")
     st.text("".join(p2_air) + "\n" + "".join(p2_ground))
 
     # Controls
     if not st.session_state.game_over:
         col1, col2 = st.columns(2)
         with col1:
-            if st.button(f"🦘 {p1_name} Jump"):
+            if st.button(f"🦘 {p1_name} Jump (W)", key="p1_jump_btn"):
                 st.session_state.p1_y = 1
                 step(vs_bot)
                 st.rerun()
 
         if not vs_bot:
             with col2:
-                if st.button("🦘 Player 2 Jump"):
+                if st.button("🦘 Player 2 Jump (P)", key="p2_jump_btn"):
                     st.session_state.p2_y = 1
                     step(vs_bot)
                     st.rerun()
+
+        # Keyboard Controls Listener (W and P)
+        st.html(
+            """
+            <script>
+            const doc = window.parent.document;
+            const win = window.parent;
+            if (!win.snakeKeyHandlerAttached) {
+                win.snakeKeyHandlerAttached = true;
+                win.addEventListener('keydown', function(e) {
+                    const key = e.key.toLowerCase();
+                    if (key === 'w') {
+                        e.preventDefault();
+                        const btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Player 1 Jump') || b.innerText.includes('(W)'));
+                        if (btn) btn.click();
+                    } else if (key === 'p') {
+                        e.preventDefault();
+                        const btn = Array.from(doc.querySelectorAll('button')).find(b => b.innerText.includes('Player 2 Jump') || b.innerText.includes('(P)'));
+                        if (btn) btn.click();
+                    }
+                }, { passive: false });
+            }
+            </script>
+            """
+        )
+
     else:
         st.error(f"💥 Game Over! Final Score: {st.session_state.score}")
         if st.button("🔄 Play Again"):
