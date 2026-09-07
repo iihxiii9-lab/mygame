@@ -1,152 +1,175 @@
 import pandas as pd
 import streamlit as st
 
-# --- CONFIGURATION ---
-TRACK_LENGTH = 20
-
-st.set_page_config(page_title="Snake Jumper", layout="centered")
+st.set_page_config(page_title="Tic-Tac-Toe", layout="centered")
 
 
 # --- SCORE MANAGEMENT ---
 def load_scores():
     if "local_scores" not in st.session_state:
         st.session_state.local_scores = [
-            {"Name": "ProBot", "Score": 120},
-            {"Name": "Player 1", "Score": 80},
+            {"Name": "ProBot", "Score": 5},
+            {"Name": "Player 1", "Score": 3},
         ]
     df = pd.DataFrame(st.session_state.local_scores)
     return df.sort_values(by="Score", ascending=False).reset_index(drop=True)
 
 
-def save_score(name, score):
-    st.session_state.local_scores.append({"Name": name, "Score": score})
+def save_score(name):
+    if "local_scores" not in st.session_state:
+        st.session_state.local_scores = []
+
+    # Update score if player exists, otherwise add new record
+    found = False
+    for entry in st.session_state.local_scores:
+        if entry["Name"] == name:
+            entry["Score"] += 1
+            found = True
+            break
+    if not found:
+        st.session_state.local_scores.append({"Name": name, "Score": 1})
 
 
-# --- SESSION STATE INITIALIZATION ---
-if "game_started" not in st.session_state:
-    st.session_state.game_started = False
-if "game_over" not in st.session_state:
-    st.session_state.game_over = False
-if "p1_y" not in st.session_state:
-    st.session_state.p1_y = 0
-if "p2_y" not in st.session_state:
-    st.session_state.p2_y = 0
-if "obstacles" not in st.session_state:
-    st.session_state.obstacles = [15]
-if "score" not in st.session_state:
-    st.session_state.score = 0
+# --- GAME LOGIC ---
+def check_winner(board):
+    wins = [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8],  # Rows
+        [0, 3, 6],
+        [1, 4, 7],
+        [2, 5, 8],  # Columns
+        [0, 4, 8],
+        [2, 4, 6],  # Diagonals
+    ]
+    for w in wins:
+        if board[w[0]] == board[w[1]] == board[w[2]] != "":
+            return board[w[0]]
+    if "" not in board:
+        return "Tie"
+    return None
 
 
-def reset_game():
-    st.session_state.p1_y = 0
-    st.session_state.p2_y = 0
-    st.session_state.obstacles = [15]
-    st.session_state.score = 0
-    st.session_state.game_over = False
+def bot_move(board):
+    # 1. Try to win
+    for i in range(9):
+        if board[i] == "":
+            board[i] = "O"
+            if check_winner(board) == "O":
+                return
+            board[i] = ""
+
+    # 2. Block player from winning
+    for i in range(9):
+        if board[i] == "":
+            board[i] = "X"
+            if check_winner(board) == "X":
+                board[i] = "O"
+                return
+            board[i] = ""
+
+    # 3. Pick center or first open space
+    if board[4] == "":
+        board[4] = "O"
+        return
+
+    for i in range(9):
+        if board[i] == "":
+            board[i] = "O"
+            return
+
+
+def reset_board():
+    st.session_state.board = [""] * 9
+    st.session_state.turn = "X"
+    st.session_state.winner = None
     st.session_state.game_started = True
 
 
-def step(vs_bot, p1_jump, p2_jump):
-    if st.session_state.game_over:
-        return
-
-    # Apply manual jump inputs
-    st.session_state.p1_y = 1 if p1_jump else 0
-
-    if vs_bot:
-        incoming = any(obs in [3, 4] for obs in st.session_state.obstacles)
-        st.session_state.p2_y = 1 if incoming else 0
-    else:
-        st.session_state.p2_y = 1 if p2_jump else 0
-
-    # Move Obstacles
-    new_obstacles = []
-    for obs in st.session_state.obstacles:
-        next_pos = obs - 1
-
-        p1_hit = next_pos == 2 and st.session_state.p1_y == 0
-        p2_hit = next_pos == 2 and st.session_state.p2_y == 0
-
-        if p1_hit or p2_hit:
-            st.session_state.game_over = True
-            save_score(st.session_state.p1_name, st.session_state.score)
-            return
-        elif next_pos >= 0:
-            new_obstacles.append(next_pos)
-        else:
-            st.session_state.score += 10
-
-    if not new_obstacles or (TRACK_LENGTH - 1 - new_obstacles[-1] >= 6):
-        new_obstacles.append(TRACK_LENGTH - 1)
-
-    st.session_state.obstacles = new_obstacles
+# --- INITIAL SESSION STATE ---
+if "game_started" not in st.session_state:
+    st.session_state.game_started = False
+if "board" not in st.session_state:
+    st.session_state.board = [""] * 9
+if "turn" not in st.session_state:
+    st.session_state.turn = "X"
+if "winner" not in st.session_state:
+    st.session_state.winner = None
 
 
 # --- UI LAYOUT ---
-st.title("🐍 Simple Snake Jumper")
+st.title("❌⭕ Tic-Tac-Toe")
 
 if not st.session_state.game_started:
-    p1_name = st.text_input("Player 1 Name:", value="Player 1")
-    mode = st.radio("Select Mode:", ["vs Computer Bot", "2 Player"])
+    p1_name = st.text_input("Player 1 (X) Name:", value="Player 1")
+    mode = st.radio("Opponent Mode:", ["vs Computer Bot", "2 Player (Shared Keyboard)"])
+    p2_name = "Computer Bot" if "Bot" in mode else st.text_input("Player 2 (O) Name:", value="Player 2")
 
-    if st.button("🚀 Start Game"):
+    if st.button("🚀 Start Game", use_container_width=True):
         st.session_state.p1_name = p1_name
+        st.session_state.p2_name = p2_name
         st.session_state.vs_bot = "Bot" in mode
-        reset_game()
+        reset_board()
         st.rerun()
 
 else:
-    vs_bot = st.session_state.vs_bot
     p1_name = st.session_state.p1_name
-    p2_name = "Bot" if vs_bot else "Player 2"
+    p2_name = st.session_state.p2_name
+    vs_bot = st.session_state.vs_bot
 
-    st.metric("Score", st.session_state.score)
+    # Current turn indicator
+    if not st.session_state.winner:
+        current_player = p1_name if st.session_state.turn == "X" else p2_name
+        st.info(f"Turn: **{current_player} ({st.session_state.turn})**")
 
-    # Build Tracks
-    p1_air, p1_ground = ["⬜"] * TRACK_LENGTH, ["⬜"] * TRACK_LENGTH
-    p2_air, p2_ground = ["⬜"] * TRACK_LENGTH, ["⬜"] * TRACK_LENGTH
+    # Render 3x3 Grid
+    board = st.session_state.board
+    for row in range(3):
+        cols = st.columns(3)
+        for col in range(3):
+            idx = row * 3 + col
+            label = board[idx] if board[idx] != "" else " "
 
-    for obs in st.session_state.obstacles:
-        if 0 <= obs < TRACK_LENGTH:
-            p1_ground[obs] = "🌵"
-            p2_ground[obs] = "🌵"
+            # Button click handling
+            if cols[col].button(
+                label,
+                key=f"btn_{idx}",
+                use_container_width=True,
+                disabled=bool(st.session_state.winner or board[idx] != ""),
+            ):
+                # Player Move
+                board[idx] = st.session_state.turn
+                st.session_state.winner = check_winner(board)
 
-    p1_ground[2] = "🟢" if st.session_state.p1_y == 0 else "⬜"
-    p1_air[2] = "🟢" if st.session_state.p1_y == 1 else "⬜"
+                # Switch turn or trigger Bot
+                if not st.session_state.winner:
+                    if vs_bot:
+                        bot_move(board)
+                        st.session_state.winner = check_winner(board)
+                    else:
+                        st.session_state.turn = "O" if st.session_state.turn == "X" else "X"
 
-    p2_icon = "🤖" if vs_bot else "🔵"
-    p2_ground[2] = p2_icon if st.session_state.p2_y == 0 else "⬜"
-    p2_air[2] = p2_icon if st.session_state.p2_y == 1 else "⬜"
+                st.rerun()
 
-    st.markdown(f"**{p1_name}:**")
-    st.text("".join(p1_air) + "\n" + "".join(p1_ground))
+    # Game Result Banner
+    if st.session_state.winner:
+        if st.session_state.winner == "Tie":
+            st.warning("🤝 It's a Tie!")
+        else:
+            winner_name = p1_name if st.session_state.winner == "X" else p2_name
+            st.balloons()
+            st.success(f"🎉 **{winner_name} ({st.session_state.winner}) Wins!**")
+            save_score(winner_name)
 
-    st.markdown(f"**{p2_name}:**")
-    st.text("".join(p2_air) + "\n" + "".join(p2_ground))
-
-    # Turn Controls
-    if not st.session_state.game_over:
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-
-        with col1:
-            p1_jump = st.checkbox(f"🦘 {p1_name} Jump Next Turn")
-
-        p2_jump = False
-        if not vs_bot:
-            with col2:
-                p2_jump = st.checkbox("🦘 Player 2 Jump Next Turn")
-
-        if st.button("▶️ Next Frame / Advance Track", use_container_width=True):
-            step(vs_bot, p1_jump, p2_jump)
+        if st.button("🔄 Play Again", use_container_width=True):
+            reset_board()
             st.rerun()
-    else:
-        st.error(f"💥 Game Over! Final Score: {st.session_state.score}")
-        if st.button("🔄 Play Again"):
+
+        if st.button("⚙️ Change Mode / Names"):
             st.session_state.game_started = False
             st.rerun()
 
 # Leaderboard
 st.markdown("---")
-st.subheader("🏆 Leaderboard")
-st.dataframe(load_scores(), width="stretch")
+st.subheader("🏆 Leaderboard (Total Wins)")
+st.dataframe(load_scores(), use_container_width=True)
