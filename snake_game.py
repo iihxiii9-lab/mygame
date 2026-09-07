@@ -13,7 +13,6 @@ st.set_page_config(
 # --- SHARED MATCHMAKING QUEUE (Cross-Session) ---
 @st.cache_resource
 def get_global_matchmaking():
-    # Stores waiting players & active rooms across sessions
     return {"waiting_player": None, "rooms": {}}
 
 
@@ -43,10 +42,10 @@ def save_score(name, score):
 
 
 # --- SESSION STATE INITIALIZATION ---
+if "searching" not in st.session_state:
+    st.session_state.searching = False
 if "game_started" not in st.session_state:
     st.session_state.game_started = False
-if "game_over" not in st.session_state:
-    st.session_state.game_over = False
 if "room_id" not in st.session_state:
     st.session_state.room_id = None
 if "player_role" not in st.session_state:
@@ -71,18 +70,18 @@ def step(room):
     if room["game_over"]:
         return
 
-    # 1. Reset Jump States after frame
+    # Reset Jump States after frame
     if room["p1_y"] == 1:
         room["p1_y"] = 0
 
-    # 2. Computer AI Logic if Bot
+    # Computer AI Logic if Bot
     if room["is_bot"]:
         incoming = any(obs in [3, 4] for obs in room["obstacles"])
         room["p2_y"] = 1 if incoming else 0
     elif room["p2_y"] == 1:
         room["p2_y"] = 0
 
-    # 3. Move Obstacles
+    # Move Obstacles
     new_obstacles = []
     for obs in room["obstacles"]:
         next_pos = obs - 1
@@ -108,71 +107,75 @@ def step(room):
 
 
 # --- UI LAYOUT ---
-st.title("🐍 Snake Jumper (Auto-Matchmaking)")
+st.title("🐍 Snake Jumper")
 
 player_name = st.text_input("Enter Your Name:", value="Player 1").strip()
 
-# Matchmaking System
+# --- LOBBY & MATCHMAKING ---
 if not st.session_state.game_started:
-    if st.button("🎮 Find Game"):
-        if not player_name:
-            st.warning("Please enter your name first!")
-        else:
-            waiting = global_data["waiting_player"]
 
-            # Option A: Real player is waiting -> Match them together
-            if waiting and waiting["name"] != player_name:
-                room_id = f"room_{waiting['name']}_{player_name}"
-                global_data["rooms"][room_id] = init_room(
-                    waiting["name"], player_name, is_bot=False
-                )
-                global_data["waiting_player"] = None  # Clear queue
-
-                st.session_state.room_id = room_id
-                st.session_state.player_role = "p2"
-                st.session_state.game_started = True
-                st.session_state.game_over = False
-                st.rerun()
-
-            # Option B: No one is waiting -> Wait 5s, then assign Bot if nobody joins
+    if not st.session_state.searching:
+        if st.button("🎮 Start Game / Find Match"):
+            if not player_name:
+                st.warning("Please enter your name first!")
             else:
-                global_data["waiting_player"] = {
-                    "name": player_name,
-                    "time": time.time(),
-                }
-                status_placeholder = st.empty()
+                waiting = global_data["waiting_player"]
 
-                matched = False
-                for i in range(5, 0, -1):
-                    status_placeholder.info(
-                        f"🔍 Searching for an online player... ({i}s remaining)"
-                    )
-                    time.sleep(1)
-
-                    # Check if another player picked us up during countdown
-                    for r_id, r_data in list(global_data["rooms"].items()):
-                        if r_data["p1_name"] == player_name:
-                            st.session_state.room_id = r_id
-                            st.session_state.player_role = "p1"
-                            st.session_state.game_started = True
-                            st.session_state.game_over = False
-                            matched = True
-                            break
-                    if matched:
-                        break
-
-                # If 5 seconds passed with no human -> Match with Bot
-                if not matched:
-                    global_data["waiting_player"] = None
-                    room_id = f"bot_room_{player_name}"
+                # Case A: Real player is already in queue -> Pair instantly
+                if waiting and waiting["name"] != player_name:
+                    room_id = f"room_{waiting['name']}_{player_name}"
                     global_data["rooms"][room_id] = init_room(
-                        player_name, "Computer Bot", is_bot=True
+                        waiting["name"], player_name, is_bot=False
                     )
+                    global_data["waiting_player"] = None
+
                     st.session_state.room_id = room_id
-                    st.session_state.player_role = "p1"
+                    st.session_state.player_role = "p2"
                     st.session_state.game_started = True
-                    st.session_state.game_over = False
                     st.rerun()
+
+                # Case B: Queue empty -> Wait for someone or launch Bot
+                else:
+                    global_data["waiting_player"] = {
+                        "name": player_name,
+                        "time": time.time(),
+                    }
+                    st.session_state.searching = True
+                    st.rerun()
+
+    else:
+        st.info("🔍 Searching for an online player...")
+
+        # Check if matched by another player
+        matched = False
+        for r_id, r_data in list(global_data["rooms"].items()):
+            if r_data["p1_name"] == player_name:
+                st.session_state.room_id = r_id
+                st.session_state.player_role = "p1"
+                st.session_state.game_started = True
+                st.session_state.searching = False
+                matched = True
+                st.rerun()
+                break
+
+        if not matched:
+            waiting = global_data["waiting_player"]
+            # Check if 4 seconds passed while waiting
+            if waiting and (time.time() - waiting["time"] > 4):
+                global_data["waiting_player"] = None
+                room_id = f"bot_room_{player_name}"
+                global_data["rooms"][room_id] = init_room(
+                    player_name, "Computer Bot", is_bot=True
+                )
+                st.session_state.room_id = room_id
+                st.session_state.player_role = "p1"
+                st.session_state.game_started = True
+                st.session_state.searching = False
+                st.rerun()
+            else:
+                # Refresh page to check matchmaking status
+                time.sleep(1)
+                st.rerun()
 
 # --- ACTIVE GAME ENGINE ---
 if st.session_state.game_started and st.session_state.room_id:
@@ -193,7 +196,7 @@ if st.session_state.game_started and st.session_state.room_id:
                 f"{opponent_icon} {p2_name}", f"Score: {room['p2_score']}"
             )
 
-        # Build Tracks
+        # Build Track Displays
         p1_air, p1_ground = ["⬜"] * TRACK_LENGTH, ["⬜"] * TRACK_LENGTH
         p2_air, p2_ground = ["⬜"] * TRACK_LENGTH, ["⬜"] * TRACK_LENGTH
 
@@ -218,7 +221,7 @@ if st.session_state.game_started and st.session_state.room_id:
         st.markdown(f"**{p2_name}'s Track:**")
         st.text("".join(p2_air) + "\n" + "".join(p2_ground))
 
-        # Controls & Physics Processing
+        # Game Controls
         if not room["game_over"]:
             if st.button("🦘 JUMP (Space / Enter)", key="jump_btn"):
                 if role == "p1":
@@ -229,7 +232,6 @@ if st.session_state.game_started and st.session_state.room_id:
                 step(room)
                 st.rerun()
 
-            # Keyboard Listener
             st.html(
                 """
                 <script>
@@ -255,10 +257,11 @@ if st.session_state.game_started and st.session_state.room_id:
             )
             if st.button("Play Again"):
                 st.session_state.game_started = False
+                st.session_state.searching = False
                 st.session_state.room_id = None
                 st.rerun()
 
-# Leaderboard Display
+# Leaderboard
 st.markdown("---")
 st.subheader("🏆 Leaderboard")
 st.dataframe(load_scores(), width="stretch")
